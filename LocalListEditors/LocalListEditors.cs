@@ -26,20 +26,22 @@ namespace LocalListEditors
         [HarmonyPatch(typeof(ListEditor))]
         class ListEditor_Patch
         {
-            static List<ListEditor> listList = new List<ListEditor>();
+            readonly static List<ListEditor> listList = new List<ListEditor>();
+
+            static void CleanUpForeignItems(ListEditor __instance) {
+                var userID = __instance.LocalUser.UserID;
+
+                foreach (var child in __instance.Slot.Children
+                    .Where(child => !child.Name.Contains("(" + userID + " Local)"))) {
+                    __instance.World?.RunSynchronously(child.Destroy);
+                }
+            }
 
             [HarmonyPatch("Setup")]
             [HarmonyPostfix]
             public static void ListSetup(ListEditor __instance) {
                 listList.Add(__instance);
-                __instance.Slot.ChildAdded += (slot, child) =>
-                {
-                    var userID = __instance.LocalUser.UserID;
-                    
-                    if (!child.Name.Contains("(" + userID + " Local)")) {
-                        child.Destroy();
-                    }
-                };
+                __instance.Slot.ChildAdded += (s, c) => CleanUpForeignItems(__instance);
             }
             
             static void Target_ElementsAdded(ListEditor __instance, ISyncList list, int startIndex, int count) => __instance.World?.RunSynchronously(() =>
@@ -76,6 +78,7 @@ namespace LocalListEditors
                     ____targetList.Target.ListCleared += AccessTools.Method(__instance.GetType(), "Target_ListCleared")
                         .CreateDelegate(typeof(SyncListEvent), __instance) as SyncListEvent;
                     Target_ElementsAdded(__instance, ____targetList.Target, 0, ____targetList.Target.Count);
+                    __instance.RunInSeconds(0.5f, () => CleanUpForeignItems(__instance));
                 }
                 if (!___reindex)
                     return false;
