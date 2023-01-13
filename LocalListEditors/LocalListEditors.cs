@@ -16,7 +16,7 @@ namespace LocalListEditors
     {
         public override string Name => "LocalListEditors";
         public override string Author => "TheJebForge";
-        public override string Version => "1.0.1";
+        public override string Version => "1.0.2";
         
         public override void OnEngineInit() {
             Harmony harmony = new Harmony($"net.{Author}.{Name}");
