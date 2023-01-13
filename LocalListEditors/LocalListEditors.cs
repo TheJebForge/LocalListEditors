@@ -31,10 +31,13 @@ namespace LocalListEditors
             static void CleanUpForeignItems(ListEditor __instance) {
                 var userID = __instance.LocalUser.UserID;
 
-                foreach (var child in __instance.Slot.Children
-                    .Where(child => !child.Name.Contains("(" + userID + " Local)"))) {
-                    __instance.World?.RunSynchronously(child.Destroy);
-                }
+                __instance.World?.RunSynchronously(() =>
+                {
+                    foreach (var child in __instance.Slot.Children
+                        .Where(child => !child.Name.Contains("(" + userID + " Local)"))) {
+                        child.Destroy();
+                    }
+                });
             }
 
             [HarmonyPatch("Setup")]
