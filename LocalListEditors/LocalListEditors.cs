@@ -16,7 +16,7 @@ namespace LocalListEditors
     {
         public override string Name => "LocalListEditors";
         public override string Author => "TheJebForge";
-        public override string Version => "1.1.0";
+        public override string Version => "1.1.1";
         
         [AutoRegisterConfigKey]
         readonly ModConfigurationKey<bool> ENABLED = new ModConfigurationKey<bool>("enabled","If mod functionality is enabled", () => true);
@@ -32,15 +32,20 @@ namespace LocalListEditors
             harmony.PatchAll();
         }
 
-        bool IsModEnabled(IWorldElement __instance) => config.GetValue(ENABLED) && !__instance.World.IsAuthority;
+        bool IsModEnabled(IWorldElement __instance) => config.GetValue(ENABLED) && 
+            !__instance.World.IsAuthority;
+        
+        bool IsCustomList(IWorldElement __instance) => ListEditor_Patch.listList.Contains(__instance);
 
         [HarmonyPatch(typeof(ListEditor))]
         class ListEditor_Patch
         {
-            readonly static List<ListEditor> listList = new List<ListEditor>();
+            public readonly static List<ListEditor> listList = new List<ListEditor>();
             readonly static Dictionary<ListEditor, ISyncList> listTargets = new Dictionary<ListEditor, ISyncList>();
 
             static void CleanUpForeignItems(ListEditor __instance) {
+                if (!modInstance.IsModEnabled(__instance)) return;
+                
                 var userID = __instance.LocalUser.UserID;
 
                 __instance.World?.RunSynchronously(() =>
@@ -57,6 +62,7 @@ namespace LocalListEditors
             static bool AddNewPressed(ListEditor __instance, IButton button, ButtonEventData eventData)
             {
                 if (!modInstance.IsModEnabled(__instance)) return true;
+                if (!modInstance.IsCustomList(__instance)) return true;
                 
                 var targetList = listTargets[__instance];
                 
@@ -71,6 +77,7 @@ namespace LocalListEditors
             [HarmonyPrefix]
             static bool RemovePressed(ListEditor __instance, IButton button, ButtonEventData eventData) {
                 if (!modInstance.IsModEnabled(__instance)) return true;
+                if (!modInstance.IsCustomList(__instance)) return true;
                 
                 var targetList = listTargets[__instance];
                 
