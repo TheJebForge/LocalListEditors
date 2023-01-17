@@ -16,17 +16,29 @@ namespace LocalListEditors
     {
         public override string Name => "LocalListEditors";
         public override string Author => "TheJebForge";
-        public override string Version => "1.0.2";
+        public override string Version => "1.1.0";
         
+        [AutoRegisterConfigKey]
+        readonly ModConfigurationKey<bool> ENABLED = new ModConfigurationKey<bool>("enabled","If mod functionality is enabled", () => true);
+
+        ModConfiguration config;
+        static LocalListEditors modInstance;
+
         public override void OnEngineInit() {
+            modInstance = this;
+            config = GetConfiguration();
+            
             Harmony harmony = new Harmony($"net.{Author}.{Name}");
             harmony.PatchAll();
         }
+
+        bool IsModEnabled(IWorldElement __instance) => config.GetValue(ENABLED) && !__instance.World.IsAuthority;
 
         [HarmonyPatch(typeof(ListEditor))]
         class ListEditor_Patch
         {
             readonly static List<ListEditor> listList = new List<ListEditor>();
+            readonly static Dictionary<ListEditor, ISyncList> listTargets = new Dictionary<ListEditor, ISyncList>();
 
             static void CleanUpForeignItems(ListEditor __instance) {
                 var userID = __instance.LocalUser.UserID;
@@ -39,12 +51,59 @@ namespace LocalListEditors
                     }
                 });
             }
+            
+            [HarmonyPatch("AddNewPressed")]
+            [HarmonyPrefix]
+            static bool AddNewPressed(ListEditor __instance, IButton button, ButtonEventData eventData)
+            {
+                if (!modInstance.IsModEnabled(__instance)) return true;
+                
+                var targetList = listTargets[__instance];
+                
+                if (targetList is ConflictingSyncElement target && target.DirectAccessOnly && !__instance.LocalUser.IsDirectlyInteracting())
+                    return false;
+                targetList.AddElement();
+
+                return false;
+            }
+            
+            [HarmonyPatch("RemovePressed")]
+            [HarmonyPrefix]
+            static bool RemovePressed(ListEditor __instance, IButton button, ButtonEventData eventData) {
+                if (!modInstance.IsModEnabled(__instance)) return true;
+                
+                var targetList = listTargets[__instance];
+                
+                if (targetList is ConflictingSyncElement target && target.DirectAccessOnly && !__instance.LocalUser.IsDirectlyInteracting())
+                    return false;
+                for (var index = 0; index < __instance.Slot.ChildrenCount; ++index) {
+                    if (__instance.Slot[index].GetComponentsInChildren<Button>().All(b => b != button)) continue;
+                    targetList?.RemoveElement(index);
+                    break;
+                }
+
+                return false;
+            }
 
             [HarmonyPatch("Setup")]
-            [HarmonyPostfix]
-            public static void ListSetup(ListEditor __instance) {
+            [HarmonyPrefix]
+            public static bool ListSetup(
+                ListEditor __instance, 
+                SyncRef<Button> ____addNewButton,
+                ISyncList target, 
+                Button button) {
+                if (!modInstance.IsModEnabled(__instance)) return true;
+                
+                listTargets.Add(__instance, target);
+                
+                ____addNewButton.Target = button;
+                ____addNewButton.Target.Pressed.Target = AccessTools.Method(__instance.GetType(), "AddNewPressed")
+                    .CreateDelegate(typeof(ButtonEventHandler), __instance) as ButtonEventHandler;
+
                 listList.Add(__instance);
                 __instance.Slot.ChildAdded += (s, c) => CleanUpForeignItems(__instance);
+
+                return false;
             }
             
             static void Target_ElementsAdded(ListEditor __instance, ISyncList list, int startIndex, int count) => __instance.World?.RunSynchronously(() =>
@@ -70,17 +129,21 @@ namespace LocalListEditors
                 ref ISyncList ____registeredList,
                 ref bool ___setup,
                 ref bool ___reindex) {
-                if (____targetList.Target != null && !___setup && listList.Contains(__instance))
+                if (!modInstance.IsModEnabled(__instance)) return true;
+
+                var listTarget = ____targetList.Target ?? listTargets[__instance];
+                
+                if (listTarget != null && !___setup && listList.Contains(__instance))
                 {
                     ___setup = true;
-                    ____registeredList = ____targetList.Target;
+                    ____registeredList = listTarget;
                     __instance.Slot.DestroyChildren();
-                    ____targetList.Target.ElementsAdded += (list, index, count) => Target_ElementsAdded(__instance, list, index, count);
-                    ____targetList.Target.ElementsRemoved += AccessTools.Method(__instance.GetType(), "Target_ElementsRemoved")
+                    listTarget.ElementsAdded += (list, index, count) => Target_ElementsAdded(__instance, list, index, count);
+                    listTarget.ElementsRemoved += AccessTools.Method(__instance.GetType(), "Target_ElementsRemoved")
                         .CreateDelegate(typeof(SyncListElementsEvent), __instance) as SyncListElementsEvent;
-                    ____targetList.Target.ListCleared += AccessTools.Method(__instance.GetType(), "Target_ListCleared")
+                    listTarget.ListCleared += AccessTools.Method(__instance.GetType(), "Target_ListCleared")
                         .CreateDelegate(typeof(SyncListEvent), __instance) as SyncListEvent;
-                    Target_ElementsAdded(__instance, ____targetList.Target, 0, ____targetList.Target.Count);
+                    Target_ElementsAdded(__instance, listTarget, 0, listTarget.Count);
                     __instance.RunInSeconds(0.5f, () => CleanUpForeignItems(__instance));
                 }
                 if (!___reindex)

@@ -20,7 +20,7 @@
         <DebugType Condition="'$(Configuration)'=='Release'">None</DebugType>
         <Authors>TheJebForge</Authors>
         <PackageId>LocalListEditors</PackageId>
-        <Version>1.0.2</Version>
+        <Version>1.1.0</Version>
     </PropertyGroup>
     <ItemGroup>
         <Reference Include="HarmonyLib">
